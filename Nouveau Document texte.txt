@@ -1,0 +1,507 @@
+"""
+🐦 FLAPPY BIRD ULTRA COOL 🐦
+Jeu Flappy Bird entièrement en français - Version Ultra Stylée !
+Créé avec amour et passion pour le gaming français
+
+Contrôles: ESPACE pour faire voler l'oiseau
+Objectif: Éviter les tuyaux et battre ton record !
+"""
+
+import pygame
+import random
+import sys
+import math
+
+pygame.init()
+pygame.mixer.init()
+
+LARGEUR = 900
+HAUTEUR = 700
+FPS = 60
+
+BLEU_CIEL = (135, 206, 250)
+BLEU_PROFOND = (25, 25, 112)
+BLANC = (255, 255, 255)
+NOIR = (0, 0, 0)
+JAUNE_OISEAU = (255, 215, 0)
+VERT_TUYAU = (34, 139, 34)
+VERT_FONCE = (0, 100, 0)
+ROUGE_VIF = (220, 20, 60)
+ORANGE_SOLEIL = (255, 140, 0)
+VIOLET_MAGIQUE = (138, 43, 226)
+
+TAILLE_OISEAU = 35
+GRAVITE = 0.7
+FORCE_SAUT = -13
+VITESSE_JEU = 5
+LARGEUR_TUYAU = 70
+ESPACE_TUYAUX = 220
+DISTANCE_TUYAUX = 350
+
+class ParticuleEtoile:
+    """Particules d'étoiles pour les effets visuels"""
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.vitesse_x = random.uniform(-2, 2)
+        self.vitesse_y = random.uniform(-3, -1)
+        self.vie = 30
+        self.couleur = random.choice([JAUNE_OISEAU, BLANC, ORANGE_SOLEIL])
+        
+    def mettre_a_jour(self):
+        self.x += self.vitesse_x
+        self.y += self.vitesse_y
+        self.vie -= 1
+        
+    def dessiner(self, ecran):
+        if self.vie > 0:
+            alpha = max(0, self.vie / 30.0)
+            rayon = max(1, int(3 * alpha))
+            pygame.draw.circle(ecran, self.couleur, (int(self.x), int(self.y)), rayon)
+
+class Oiseau:
+    """Notre héros ailé ultra stylé !"""
+    
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.vitesse_y = 0
+        self.angle = 0
+        self.particules = []
+        self.animation_battement = 0
+        
+    def sauter(self):
+        """L'oiseau prend son envol !"""
+        self.vitesse_y = FORCE_SAUT
+        for _ in range(5):
+            self.particules.append(ParticuleEtoile(self.x - 15, self.y))
+            
+    def mettre_a_jour(self):
+        """Physique de vol réaliste"""
+        self.vitesse_y += GRAVITE
+        self.y += self.vitesse_y
+        
+        self.animation_battement += 0.3
+        
+        self.angle = min(max(self.vitesse_y * 2.5, -25), 45)
+        
+        self.particules = [p for p in self.particules if p.vie > 0]
+        for particule in self.particules:
+            particule.mettre_a_jour()
+            
+    def dessiner(self, ecran):
+        """Dessine notre oiseau magnifique"""
+        for particule in self.particules:
+            particule.dessiner(ecran)
+            
+        # Corps principal (cercle doré avec dégradé)
+        for i in range(3):
+            couleur_intensite = 255 - i * 30
+            couleur = (couleur_intensite, couleur_intensite - 40, 0)
+            pygame.draw.circle(ecran, couleur, 
+                             (int(self.x), int(self.y)), TAILLE_OISEAU//2 - i)
+        
+        # Ailes animées
+        battement = math.sin(self.animation_battement) * 8
+        aile_y = int(self.y + battement)
+        
+        # Aile gauche
+        points_aile = [
+            (int(self.x - 15), aile_y),
+            (int(self.x - 25), aile_y - 10),
+            (int(self.x - 20), aile_y + 5)
+        ]
+        pygame.draw.polygon(ecran, ORANGE_SOLEIL, points_aile)
+        
+        # Aile droite
+        points_aile_droite = [
+            (int(self.x + 15), aile_y),
+            (int(self.x + 25), aile_y - 10),
+            (int(self.x + 20), aile_y + 5)
+        ]
+        pygame.draw.polygon(ecran, ORANGE_SOLEIL, points_aile_droite)
+        
+        # Œil brillant
+        pygame.draw.circle(ecran, BLANC, (int(self.x + 8), int(self.y - 5)), 8)
+        pygame.draw.circle(ecran, NOIR, (int(self.x + 10), int(self.y - 5)), 5)
+        pygame.draw.circle(ecran, BLANC, (int(self.x + 12), int(self.y - 7)), 2)
+        
+        # Bec orange stylé
+        bec = [
+            (int(self.x + TAILLE_OISEAU//2), int(self.y - 2)),
+            (int(self.x + TAILLE_OISEAU//2 + 15), int(self.y)),
+            (int(self.x + TAILLE_OISEAU//2), int(self.y + 2))
+        ]
+        pygame.draw.polygon(ecran, ORANGE_SOLEIL, bec)
+        
+        # Contour stylé
+        pygame.draw.circle(ecran, NOIR, (int(self.x), int(self.y)), TAILLE_OISEAU//2, 3)
+        
+    def obtenir_rect(self):
+        """Zone de collision de l'oiseau"""
+        return pygame.Rect(self.x - TAILLE_OISEAU//2 + 5, 
+                          self.y - TAILLE_OISEAU//2 + 5,
+                          TAILLE_OISEAU - 10, TAILLE_OISEAU - 10)
+
+class Tuyau:
+    """Obstacles verts redoutables mais stylés"""
+    
+    def __init__(self, x):
+        self.x = x
+        self.hauteur_gap = random.randint(80, HAUTEUR - ESPACE_TUYAUX - 80)
+        self.passe = False
+        self.scintillement = 0
+        
+    def mettre_a_jour(self):
+        """Les tuyaux avancent inexorablement"""
+        self.x -= VITESSE_JEU
+        self.scintillement += 0.1
+        
+    def dessiner(self, ecran):
+        """Dessine des tuyaux ultra détaillés"""
+        # Effet de scintillement
+        brillance = abs(math.sin(self.scintillement)) * 20
+        
+        # Tuyau supérieur
+        couleur_principale = (VERT_TUYAU[0] + int(brillance), 
+                            VERT_TUYAU[1] + int(brillance), 
+                            VERT_TUYAU[2])
+        
+        pygame.draw.rect(ecran, couleur_principale, 
+                        (self.x, 0, LARGEUR_TUYAU, self.hauteur_gap))
+        
+        # Tuyau inférieur
+        y_bas = self.hauteur_gap + ESPACE_TUYAUX
+        pygame.draw.rect(ecran, couleur_principale,
+                        (self.x, y_bas, LARGEUR_TUYAU, HAUTEUR - y_bas))
+        
+        # Bordures stylées
+        pygame.draw.rect(ecran, VERT_FONCE, 
+                        (self.x, 0, LARGEUR_TUYAU, self.hauteur_gap), 4)
+        pygame.draw.rect(ecran, VERT_FONCE,
+                        (self.x, y_bas, LARGEUR_TUYAU, HAUTEUR - y_bas), 4)
+        
+        # Chapiteaux des tuyaux (plus larges)
+        cap_largeur = LARGEUR_TUYAU + 15
+        cap_hauteur = 25
+        
+        # Chapiteau supérieur
+        pygame.draw.rect(ecran, couleur_principale,
+                        (self.x - 7, self.hauteur_gap - cap_hauteur, 
+                         cap_largeur, cap_hauteur))
+        pygame.draw.rect(ecran, VERT_FONCE,
+                        (self.x - 7, self.hauteur_gap - cap_hauteur, 
+                         cap_largeur, cap_hauteur), 4)
+        
+        # Chapiteau inférieur
+        pygame.draw.rect(ecran, couleur_principale,
+                        (self.x - 7, y_bas, cap_largeur, cap_hauteur))
+        pygame.draw.rect(ecran, VERT_FONCE,
+                        (self.x - 7, y_bas, cap_largeur, cap_hauteur), 4)
+        
+    def obtenir_rects(self):
+        """Zones de collision des tuyaux"""
+        rect_haut = pygame.Rect(self.x, 0, LARGEUR_TUYAU, self.hauteur_gap)
+        rect_bas = pygame.Rect(self.x, self.hauteur_gap + ESPACE_TUYAUX, 
+                              LARGEUR_TUYAU, HAUTEUR - self.hauteur_gap - ESPACE_TUYAUX)
+        return [rect_haut, rect_bas]
+        
+    def hors_ecran(self):
+        """Vérifie si le tuyau a disparu"""
+        return self.x + LARGEUR_TUYAU < 0
+
+class EtoileArrierePlan:
+    """Étoiles qui scintillent dans le ciel"""
+    def __init__(self):
+        self.x = random.randint(0, LARGEUR)
+        self.y = random.randint(0, HAUTEUR//2)
+        self.scintillement = random.uniform(0, math.pi * 2)
+        self.vitesse_scintillement = random.uniform(0.05, 0.15)
+        
+    def mettre_a_jour(self):
+        self.scintillement += self.vitesse_scintillement
+        
+    def dessiner(self, ecran):
+        alpha = (math.sin(self.scintillement) + 1) / 2
+        rayon = int(1 + alpha * 2)
+        couleur = (255, 255, int(200 + alpha * 55))
+        pygame.draw.circle(ecran, couleur, (self.x, self.y), rayon)
+
+class JeuFlappyBird:
+    """Le jeu principal - Une expérience magique !"""
+    
+    def __init__(self):
+        self.ecran = pygame.display.set_mode((LARGEUR, HAUTEUR))
+        pygame.display.set_caption("🐦 Flappy Bird Ultra Cool - Jeu Français 🇫🇷")
+        self.horloge = pygame.time.Clock()
+        
+        # Polices stylées
+        self.font_titre = pygame.font.Font(None, 64)
+        self.font_score = pygame.font.Font(None, 48)
+        self.font_menu = pygame.font.Font(None, 36)
+        self.font_petit = pygame.font.Font(None, 28)
+        
+        # État du jeu
+        self.etat = "menu"  # "menu", "jeu", "game_over"
+        self.demarrer_nouvelle_partie()
+        
+        # Étoiles d'arrière-plan
+        self.etoiles = [EtoileArrierePlan() for _ in range(50)]
+        
+    def demarrer_nouvelle_partie(self):
+        """Initialise une nouvelle partie"""
+        self.oiseau = Oiseau(150, HAUTEUR // 2)
+        self.tuyaux = []
+        self.score = 0
+        self.record = getattr(self, 'record', 0)
+        self.dernier_tuyau = 0
+        self.particules_score = []
+        
+    def gerer_evenements(self):
+        """Gestion des interactions joueur"""
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return False
+                
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    if self.etat == "menu":
+                        self.etat = "jeu"
+                        self.demarrer_nouvelle_partie()
+                    elif self.etat == "jeu":
+                        self.oiseau.sauter()
+                    elif self.etat == "game_over":
+                        self.etat = "menu"
+                        
+                elif event.key == pygame.K_ESCAPE:
+                    if self.etat == "jeu":
+                        self.etat = "menu"
+                    else:
+                        return False
+                        
+        return True
+        
+    def mettre_a_jour_jeu(self):
+        """Logique principale du jeu"""
+        if self.etat != "jeu":
+            return
+            
+        # Mettre à jour l'oiseau
+        self.oiseau.mettre_a_jour()
+        
+        # Vérifier les limites de l'écran
+        if self.oiseau.y <= 0 or self.oiseau.y >= HAUTEUR - 30:
+            self.game_over()
+            return
+            
+        # Générer nouveaux tuyaux
+        if len(self.tuyaux) == 0 or self.tuyaux[-1].x < LARGEUR - DISTANCE_TUYAUX:
+            self.tuyaux.append(Tuyau(LARGEUR))
+            
+        # Mettre à jour tuyaux
+        for tuyau in self.tuyaux[:]:
+            tuyau.mettre_a_jour()
+            
+            # Supprimer tuyaux hors écran
+            if tuyau.hors_ecran():
+                self.tuyaux.remove(tuyau)
+                
+            # Collision
+            rect_oiseau = self.oiseau.obtenir_rect()
+            for rect_tuyau in tuyau.obtenir_rects():
+                if rect_oiseau.colliderect(rect_tuyau):
+                    self.game_over()
+                    return
+                    
+            # Point marqué !
+            if not tuyau.passe and self.oiseau.x > tuyau.x + LARGEUR_TUYAU:
+                tuyau.passe = True
+                self.score += 1
+                # Effet de particules pour le score
+                for _ in range(10):
+                    self.particules_score.append(ParticuleEtoile(self.oiseau.x + 50, 50))
+                    
+        # Mettre à jour les étoiles
+        for etoile in self.etoiles:
+            etoile.mettre_a_jour()
+            
+        # Mettre à jour particules de score
+        self.particules_score = [p for p in self.particules_score if p.vie > 0]
+        for particule in self.particules_score:
+            particule.mettre_a_jour()
+            
+    def game_over(self):
+        """Fin de partie épique"""
+        self.etat = "game_over"
+        if self.score > self.record:
+            self.record = self.score
+            
+    def dessiner_arriere_plan(self):
+        """Arrière-plan dégradé magnifique"""
+        for y in range(HAUTEUR):
+            ratio = y / HAUTEUR
+            r = int(BLEU_CIEL[0] * (1 - ratio) + BLEU_PROFOND[0] * ratio)
+            g = int(BLEU_CIEL[1] * (1 - ratio) + BLEU_PROFOND[1] * ratio)
+            b = int(BLEU_CIEL[2] * (1 - ratio) + BLEU_PROFOND[2] * ratio)
+            pygame.draw.line(self.ecran, (r, g, b), (0, y), (LARGEUR, y))
+            
+        # Dessiner les étoiles
+        for etoile in self.etoiles:
+            etoile.dessiner(self.ecran)
+            
+        # Sol stylé
+        pygame.draw.rect(self.ecran, (34, 139, 34), (0, HAUTEUR - 30, LARGEUR, 30))
+        pygame.draw.rect(self.ecran, (0, 100, 0), (0, HAUTEUR - 30, LARGEUR, 30), 3)
+        
+    def dessiner_menu(self):
+        """Menu principal ultra stylé"""
+        self.dessiner_arriere_plan()
+        
+        # Titre avec effet d'ombre
+        titre = "🐦 FLAPPY BIRD ULTRA 🐦"
+        ombre_titre = self.font_titre.render(titre, True, NOIR)
+        texte_titre = self.font_titre.render(titre, True, JAUNE_OISEAU)
+        
+        x_centre = LARGEUR // 2
+        self.ecran.blit(ombre_titre, (x_centre - ombre_titre.get_width()//2 + 3, 103))
+        self.ecran.blit(texte_titre, (x_centre - texte_titre.get_width()//2, 100))
+        
+        # Sous-titre
+        sous_titre = "Jeu 100% Français 🇫🇷"
+        texte_sous = self.font_menu.render(sous_titre, True, BLANC)
+        self.ecran.blit(texte_sous, (x_centre - texte_sous.get_width()//2, 180))
+        
+        # Instructions
+        instructions = [
+            "🎮 CONTRÔLES:",
+            "ESPACE - Faire voler l'oiseau",
+            "ÉCHAP - Retour/Quitter",
+            "",
+            "🎯 OBJECTIF:",
+            "Évite les tuyaux verts !",
+            "Bats ton meilleur score !",
+            "",
+            "🚀 Appuie sur ESPACE pour commencer !"
+        ]
+        
+        y_pos = 250
+        for instruction in instructions:
+            if instruction.strip():
+                couleur = ORANGE_SOLEIL if instruction.startswith(("🎮", "🎯", "🚀")) else BLANC
+                texte = self.font_petit.render(instruction, True, couleur)
+                self.ecran.blit(texte, (x_centre - texte.get_width()//2, y_pos))
+            y_pos += 35
+            
+        # Afficher le record
+        if self.record > 0:
+            record_texte = f"🏆 RECORD: {self.record} points"
+            texte_record = self.font_score.render(record_texte, True, VIOLET_MAGIQUE)
+            self.ecran.blit(texte_record, (x_centre - texte_record.get_width()//2, 580))
+            
+    def dessiner_jeu(self):
+        """Rendu du jeu en action"""
+        self.dessiner_arriere_plan()
+        
+        # Dessiner tuyaux
+        for tuyau in self.tuyaux:
+            tuyau.dessiner(self.ecran)
+            
+        # Dessiner l'oiseau
+        self.oiseau.dessiner(self.ecran)
+        
+        # Dessiner particules de score
+        for particule in self.particules_score:
+            particule.dessiner(self.ecran)
+            
+        # Score actuel
+        score_texte = f"Score: {self.score}"
+        texte_score = self.font_score.render(score_texte, True, BLANC)
+        ombre_score = self.font_score.render(score_texte, True, NOIR)
+        self.ecran.blit(ombre_score, (22, 22))
+        self.ecran.blit(texte_score, (20, 20))
+        
+        # Record en cours
+        if self.record > 0:
+            record_texte = f"Record: {self.record}"
+            texte_record = self.font_petit.render(record_texte, True, JAUNE_OISEAU)
+            self.ecran.blit(texte_record, (20, 70))
+            
+    def dessiner_game_over(self):
+        """Écran de fin épique"""
+        self.dessiner_arriere_plan()
+        
+        # Dessiner les tuyaux en arrière-plan (statiques)
+        for tuyau in self.tuyaux:
+            tuyau.dessiner(self.ecran)
+            
+        # Panneau de game over
+        panel_rect = pygame.Rect(LARGEUR//2 - 200, HAUTEUR//2 - 150, 400, 300)
+        pygame.draw.rect(self.ecran, (0, 0, 0, 180), panel_rect)
+        pygame.draw.rect(self.ecran, ROUGE_VIF, panel_rect, 5)
+        
+        # Titre Game Over
+        game_over = "💀 GAME OVER 💀"
+        texte_go = self.font_titre.render(game_over, True, ROUGE_VIF)
+        x_centre = LARGEUR // 2
+        self.ecran.blit(texte_go, (x_centre - texte_go.get_width()//2, HAUTEUR//2 - 120))
+        
+        # Scores
+        score_final = f"Score Final: {self.score}"
+        texte_final = self.font_menu.render(score_final, True, BLANC)
+        self.ecran.blit(texte_final, (x_centre - texte_final.get_width()//2, HAUTEUR//2 - 60))
+        
+        if self.score == self.record and self.score > 0:
+            nouveau_record = "🎉 NOUVEAU RECORD ! 🎉"
+            texte_record = self.font_menu.render(nouveau_record, True, JAUNE_OISEAU)
+            self.ecran.blit(texte_record, (x_centre - texte_record.get_width()//2, HAUTEUR//2 - 20))
+        elif self.record > 0:
+            record_actuel = f"Meilleur: {self.record}"
+            texte_meilleur = self.font_petit.render(record_actuel, True, VIOLET_MAGIQUE)
+            self.ecran.blit(texte_meilleur, (x_centre - texte_meilleur.get_width()//2, HAUTEUR//2 - 20))
+            
+        # Instructions de relance
+        relance = "ESPACE - Nouvelle partie"
+        texte_relance = self.font_petit.render(relance, True, BLANC)
+        self.ecran.blit(texte_relance, (x_centre - texte_relance.get_width()//2, HAUTEUR//2 + 40))
+        
+        echap = "ÉCHAP - Menu principal"
+        texte_echap = self.font_petit.render(echap, True, BLANC)
+        self.ecran.blit(texte_echap, (x_centre - texte_echap.get_width()//2, HAUTEUR//2 + 70))
+        
+    def executer(self):
+        """Boucle principale du jeu"""
+        en_cours = True
+        
+        while en_cours:
+            # Gestion des événements
+            en_cours = self.gerer_evenements()
+            
+            # Mise à jour
+            self.mettre_a_jour_jeu()
+            
+            # Rendu
+            if self.etat == "menu":
+                self.dessiner_menu()
+            elif self.etat == "jeu":
+                self.dessiner_jeu()
+            elif self.etat == "game_over":
+                self.dessiner_game_over()
+                
+            pygame.display.flip()
+            self.horloge.tick(FPS)
+            
+        pygame.quit()
+        sys.exit()
+
+# Lancement du jeu
+if __name__ == "__main__":
+    print("🐦 Démarrage de Flappy Bird Ultra Cool ! 🐦")
+    print("Contrôles: ESPACE pour voler, ÉCHAP pour quitter")
+    print("Prépare-toi pour une aventure épique !")
+    
+    try:
+        jeu = JeuFlappyBird()
+        jeu.executer()
+    except Exception as e:
+        print(f"Erreur lors du lancement du jeu: {e}")
+        print("Assure-toi que Pygame est installé: pip install pygame")
